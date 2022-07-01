@@ -1,10 +1,15 @@
 #include <setjmp.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 
 #include "memory.h"
 #include "test.h"
+
+static void abort_handler(int signum) {
+    siglongjmp(ENV_JUMP_BUFFER, 1);
+}
 
 int main(int argc, char **argv)
 {
@@ -17,6 +22,8 @@ int main(int argc, char **argv)
 
     u32 passed = 0;
     u32 failed = 0;
+
+    signal(SIGABRT, abort_handler);
     
     for (int i = 0; i < test_set_count; ++i)
     {
@@ -39,7 +46,8 @@ int main(int argc, char **argv)
             dup2(pipes[1], fileno(stdout));
             
             TEST_RESULT result = TEST_FAIL;
-            
+
+            // Set jmp_return so assertions can jump back here
             int jmp_return = sigsetjmp(ENV_JUMP_BUFFER, 1);
             if (!jmp_return)
                 result = test->test_func();
