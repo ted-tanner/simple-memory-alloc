@@ -32,10 +32,12 @@ typedef struct {
 
 MemArena create_arena(u32 init_size, u32 grow_size);
 
-#define alloc_array(arena_ptr, arr_ptr, count) _alloc_data((arena_ptr), (arr_ptr), sizeof(*(arr)) * (count))
-#define alloc_struct(arena_ptr, structure) _alloc_data((arena_ptr), (&structure), sizeof(structure))
+#define alloc_array(arena_ptr, count, type) _alloc_data((arena_ptr), sizeof((type)) * (count))
+#define alloc_struct(arena_ptr, type) _alloc_data((arena_ptr), sizeof(type))
 
-void *_alloc_data(MemArena *restrict arena, void *restrict struct_ptr, size_t size);
+void arena_free(MemArena *restrict arena, void *restrict ptr, u32 size);
+
+void *_alloc_data(MemArena *restrict arena, u32 size);
 
 // TODO: Functions to create and use a TransitoryArena within the MemArena with less allocation overhead that
 //       can only be freed all at once
@@ -43,13 +45,7 @@ void *_alloc_data(MemArena *restrict arena, void *restrict struct_ptr, size_t si
 #ifdef TEST_MODE
 #include "test.h"
 
-TEST_RESULT test_test()
-{
-    assert(0, "");
-    return TEST_PASS;
-}
-
-TEST_RESULT test_test2()
+static TEST_RESULT test_alloc()
 {
     return TEST_PASS;
 }
@@ -62,7 +58,7 @@ ModuleTestSet memory_h_register_tests()
         .count = 0,
     };
 
-    add_test(&set, "Testing the test", test_test);
+    add_test(&set, "Testing the test", test_create);
     add_test(&set, "Testing the test again", test_test2);
 
     return set;

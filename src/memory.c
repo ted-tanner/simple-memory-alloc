@@ -32,7 +32,7 @@ MemArena create_arena(u32 init_size, u32 grow_size)
     return arena;
 }
 
-void *_alloc_data(MemArena *restrict arena, void *restrict data_ptr, size_t size)
+void *_alloc_data(MemArena *restrict arena, u32 size)
 {
     arena->used += size;
     assert(arena->used <= arena->size, "MemArena overflow");
@@ -65,7 +65,6 @@ void *_alloc_data(MemArena *restrict arena, void *restrict data_ptr, size_t size
             curr_region->size -= size;
         }
 
-        memcpy(destination, data_ptr, size);
         return destination;
     }
 
@@ -94,13 +93,9 @@ void *_alloc_data(MemArena *restrict arena, void *restrict data_ptr, size_t size
         memcpy(new_chunk, arena->regions_arr, prev_regions_size);
         arena->regions_arr = new_chunk;
         
-        MemRegion region_from_regions_arr = {
-            .region = (byte*) new_chunk,
-            .size = new_regions_vec_size,
-        };
-
         MemRegion *ptr_next_region = new_chunk + prev_regions_size;
-        *ptr_next_region = region_from_regions_arr;
+        ptr_next_region->region = (byte*) new_chunk;
+        ptr_next_region->size = new_regions_vec_size;
         ++arena->regions_count;
 
         destination = (byte*) new_chunk + new_regions_vec_size;
@@ -119,20 +114,66 @@ void *_alloc_data(MemArena *restrict arena, void *restrict data_ptr, size_t size
         destination = (byte*) new_chunk;
     }
 
-    MemRegion new_region = {
-        .region = destination + size,
-        .size = grow_size - size,
-    };
-
     MemRegion *next_region = arena->regions_arr + arena->regions_count;
-    *next_region = new_region;
+    next_region->region = destination + size;
+    next_region->size = grow_size - size;
     ++arena->regions_count;
     
-    memcpy(destination, data_ptr, size);
     return destination;
 }
 
 static inline void *allocate_new_chunk(void *start, u32 size)
 {
     return mmap(start, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+}
+
+void arena_free(MemArena *restrict arena, void *restrict ptr, u32 size)
+{
+    // TODO: Consider making regions_arr into a hash table to do this in constant time
+    for (MemRegion *curr_i = arena->regions_arr; curr_i != arena->regions_arr + arena->regions_count; ++curr_i)
+    {
+        if (curr_i->region == (byte*) ptr)
+        {
+            MemRegion *region_before = 0;
+            MemRegion *region_after = 0;
+            
+            for (MemRegion *curr_j = arena->regions_arr; curr_j != arena->regions_arr + arena->regions_count; ++curr_j)
+            {
+                if (curr_j->region + curr_j->size == ptr)
+                    region_before = curr_j;
+                else if (curr_j->region == ptr + size)
+                    region_after = curr_j;
+
+                if (region_before && region_after)
+                    break;
+            }
+
+            if (region_before && region_after)
+            {
+                region_before->size += (size + region_after->size);
+                
+                for (MemRegion *prev = region_after, *curr_k = region_after + 1;
+                     curr_k != arena->regions_arr + arena->regions_count;
+                     ++prev, ++curr_k)
+                {
+                    *prev = *curr_k;
+                }
+
+                --arena->regions_count;
+            }
+            else if (region_before)
+                region_before->size += size;
+            else if (region_after)
+                region_after->region -= size;
+            else
+            {
+                MemRegion *next_region = arena->regions_arr + arena->regions_count;
+                next_region->region = (byte*) ptr;
+                next_region->size = size;
+                ++arena->regions_count;
+            }
+
+            break;
+        }
+    }
 }
