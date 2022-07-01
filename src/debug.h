@@ -1,6 +1,6 @@
 #ifndef __DEBUG_H
 
-#ifdef DEBUG_MODE
+#if defined(DEBUG_MODE) && !defined(TEST_MODE)
 
 enum LOG_LEVEL { DEBUG, INFO, ERROR };
 #define log(level, message, ...) fprintf(stderr, "%s: " message "\r\n\t: (%s:%d in '%s')\r\n", \

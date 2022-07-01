@@ -40,5 +40,35 @@ void *_alloc_data(MemArena *restrict arena, void *restrict struct_ptr, size_t si
 // TODO: Functions to create and use a TransitoryArena within the MemArena with less allocation overhead that
 //       can only be freed all at once
 
+#ifdef TEST_MODE
+#include "test.h"
+
+TEST_RESULT test_test()
+{
+    assert(0, "");
+    return TEST_PASS;
+}
+
+TEST_RESULT test_test2()
+{
+    return TEST_PASS;
+}
+
+ModuleTestSet memory_h_register_tests()
+{
+    ModuleTestSet set = {
+        .module_name = __FILE__,
+        .tests = {0},
+        .count = 0,
+    };
+
+    add_test(&set, "Testing the test", test_test);
+    add_test(&set, "Testing the test again", test_test2);
+
+    return set;
+}
+
+#endif
+
 #define __MEMORY_H
 #endif
