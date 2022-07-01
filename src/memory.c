@@ -1,6 +1,9 @@
 #include "memory.h"
 
-static inline void *allocate_new_chunk(void *start, u32 size);
+static inline void *allocate_new_chunk(void *start, u32 size)
+{
+    return mmap(start, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+}
 
 MemArena create_arena(u32 init_size, u32 grow_size)
 {
@@ -120,11 +123,6 @@ void *_alloc_data(MemArena *restrict arena, u32 size)
     ++arena->regions_count;
     
     return destination;
-}
-
-static inline void *allocate_new_chunk(void *start, u32 size)
-{
-    return mmap(start, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 }
 
 void arena_free(MemArena *restrict arena, void *restrict ptr, u32 size)
