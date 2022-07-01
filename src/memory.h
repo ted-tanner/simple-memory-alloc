@@ -19,7 +19,7 @@ typedef struct {
 } MemRegion;
 
 typedef struct {
-    byte *arena;
+    byte *arena;   
      
     u32 grow_size;
     u32 size;
@@ -32,7 +32,7 @@ typedef struct {
 
 MemArena create_arena(u32 init_size, u32 grow_size);
 
-#define alloc_array(arena_ptr, count, type) _alloc_data((arena_ptr), sizeof((type)) * (count))
+#define alloc_array(arena_ptr, count, type) _alloc_data((arena_ptr), sizeof(type) * (count))
 #define alloc_struct(arena_ptr, type) _alloc_data((arena_ptr), sizeof(type))
 
 void arena_free(MemArena *restrict arena, void *restrict ptr, u32 size);
@@ -45,24 +45,8 @@ void *_alloc_data(MemArena *restrict arena, u32 size);
 #ifdef TEST_MODE
 #include "test.h"
 
-static TEST_RESULT test_alloc()
-{
-    return TEST_PASS;
-}
-
-ModuleTestSet memory_h_register_tests()
-{
-    ModuleTestSet set = {
-        .module_name = __FILE__,
-        .tests = {0},
-        .count = 0,
-    };
-
-    add_test(&set, "Testing the test", test_create);
-    add_test(&set, "Testing the test again", test_test2);
-
-    return set;
-}
+ModuleTestSet memory_h_register_tests();
+static TEST_RESULT test_alloc();
 
 #endif
 

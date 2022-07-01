@@ -175,3 +175,53 @@ void arena_free(MemArena *restrict arena, void *restrict ptr, u32 size)
         }
     }
 }
+
+#ifdef TEST_MODE
+
+ModuleTestSet memory_h_register_tests()
+{
+    ModuleTestSet set = {
+        .module_name = __FILE__,
+        .tests = {0},
+        .count = 0,
+    };
+
+    register_test(&set, "Memory allocation works correctly", test_alloc);
+
+    return set;
+}
+
+static TEST_RESULT test_alloc()
+{
+    MemArena mem = create_arena(PAGE_SIZE * 4, PAGE_SIZE * 2);
+
+    u32 usage_before_alloc = mem.used;
+    u32 starting_capacity = mem.size;
+
+    byte *array1 = (byte*) alloc_array(&mem, PAGE_SIZE - 19, byte);
+    assert(mem.used == usage_before_alloc + PAGE_SIZE - 19, "Incorrect arena usage after allocation");
+    assert(mem.size == starting_capacity, "Arena size changed when it should not have");
+    assert(mem.regions_count == 1, "Unexpected number of regions");
+
+    byte *array2 = (byte*) alloc_array(&mem, 9, byte);
+    assert(array2 == array1 + PAGE_SIZE - 19, "Alloc'ed memory not aligned as expected");
+    assert(mem.used == usage_before_alloc + PAGE_SIZE - 10, "Incorrect arena usage after allocation");
+    assert(mem.size == starting_capacity, "Arena size changed when it should not have");
+    assert(mem.regions_count == 1, "Unexpected number of regions");
+    
+    byte *array3 = (byte*) alloc_array(&mem, PAGE_SIZE + 10, byte);
+    assert(array3 == array1 + PAGE_SIZE - 10, "Alloc'ed memory not aligned as expected");
+    assert(mem.used == usage_before_alloc + 2 * PAGE_SIZE, "Incorrect arena usage after allocation");
+    assert(mem.size == starting_capacity, "Arena size changed when it should not have");
+    assert(mem.regions_count == 1, "Unexpected number of regions");
+
+    // Make sure no seg fault occurs
+    array3[PAGE_SIZE + 9] = 42;
+
+    alloc_array(&mem, PAGE_SIZE, byte);
+    // alloc_array(&mem, PAGE_SIZE, byte);
+
+    return TEST_PASS;
+}
+
+#endif
