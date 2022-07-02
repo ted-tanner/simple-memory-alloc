@@ -13,7 +13,7 @@
 #define ASCII_GREEN "\e[32m"
 #define ASCII_DEFAULT "\e[0m"
 
-jmp_buf ENV_JUMP_BUFFER;
+extern jmp_buf ENV_JUMP_BUFFER;
 
 typedef enum { TEST_PASS, TEST_FAIL } TEST_RESULT;
 typedef TEST_RESULT (*TestFunc)();

@@ -1,9 +1,5 @@
-FLAGS='-O0 -g -DDEBUG_MODE -DTEST_MODE'
-WARNINGS='-Winline'
-FILES="./src/test_main.c ./src/memory.c ./src/test.c"
+source .env
+OUTPUT_LOC="$OUTPUT_DIR/test.out"
+BUILD_SPECIFIC_FILES='./src/test_main.c ./src/test.c'
 
-OUTPUT_LOC="./out/test.out"
-
-clang $WARNINGS $FLAGS $FILES -o $OUTPUT_LOC && $OUTPUT_LOC
-
-
+$COMPILER $WARNINGS $FLAGS -DDEBUG_MODE -DTEST_MODE $FILES $BUILD_SPECIFIC_FILES -o $OUTPUT_LOC && $OUTPUT_LOC

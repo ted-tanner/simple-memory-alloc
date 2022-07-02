@@ -1,7 +1,5 @@
-FLAGS='-O0 -g -DDEBUG_MODE'
-WARNINGS='-Winline'
-FILES="./src/main.c ./src/memory.c"
+source .env
+OUTPUT_LOC="$OUTPUT_DIR/game.out"
+BUILD_SPECIFIC_FILES='./src/main.c'
 
-OUTPUT_LOC="./out/game.out"
-
-clang $WARNINGS $FLAGS $FILES -o $OUTPUT_LOC && $OUTPUT_LOC
+$COMPILER $WARNINGS $FLAGS $FILES $BUILD_SPECIFIC_FILES -o $OUTPUT_LOC && $OUTPUT_LOC

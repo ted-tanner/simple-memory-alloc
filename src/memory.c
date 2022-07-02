@@ -1,15 +1,10 @@
 #include "memory.h"
 
-static inline void *allocate_new_chunk(void *start, u32 size)
-{
-    return mmap(start, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-}
-
 MemArena create_arena(u32 init_size, u32 grow_size)
 {
     assert(init_size != 0 && init_size != PAGE_SIZE && init_size % PAGE_SIZE == 0, "Invalid init_size");
     assert(grow_size != 0 && grow_size % PAGE_SIZE == 0, "Invalid grow_size");
-
+    
     void *new_chunk = allocate_new_chunk(0, init_size);
 
     MemArena arena = {
@@ -178,19 +173,6 @@ void arena_free(MemArena *restrict arena, void *restrict ptr, u32 size)
 
 #ifdef TEST_MODE
 
-ModuleTestSet memory_h_register_tests()
-{
-    ModuleTestSet set = {
-        .module_name = __FILE__,
-        .tests = {0},
-        .count = 0,
-    };
-
-    register_test(&set, "Memory allocation works correctly", test_alloc);
-
-    return set;
-}
-
 static TEST_RESULT test_alloc()
 {
     MemArena mem = create_arena(PAGE_SIZE * 4, PAGE_SIZE * 2);
@@ -222,6 +204,19 @@ static TEST_RESULT test_alloc()
     // alloc_array(&mem, PAGE_SIZE, byte);
 
     return TEST_PASS;
+}
+
+ModuleTestSet memory_h_register_tests()
+{
+    ModuleTestSet set = {
+        .module_name = __FILE__,
+        .tests = {0},
+        .count = 0,
+    };
+
+    register_test(&set, "Memory allocation works correctly", test_alloc);
+
+    return set;
 }
 
 #endif

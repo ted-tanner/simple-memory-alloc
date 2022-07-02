@@ -2,14 +2,12 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-
-#include <sys/mman.h>
 
 #include "assert.h"
 #include "debug.h"
 #include "int.h"
 #include "intrinsics.h"
+#include "platform.h"
 
 #define __REGION_ARR_INIT_SIZE PAGE_SIZE
 
@@ -43,10 +41,10 @@ void *_alloc_data(MemArena *restrict arena, u32 size);
 //       can only be freed all at once
 
 #ifdef TEST_MODE
+
 #include "test.h"
 
 ModuleTestSet memory_h_register_tests();
-static TEST_RESULT test_alloc();
 
 #endif
 

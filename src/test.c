@@ -1,5 +1,7 @@
 #include "test.h"
 
+jmp_buf ENV_JUMP_BUFFER;
+
 void register_test(ModuleTestSet* test_set, char *test_name, TestFunc test_func)
 {
     Test test = {
