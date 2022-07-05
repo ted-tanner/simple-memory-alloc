@@ -2,7 +2,9 @@
 
 // PLATFORM SPECIFIC
 
-#if __APPLE__
+#if __WASM__
+
+#elif __APPLE__
 
 #include <sys/mman.h>
 

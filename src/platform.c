@@ -1,6 +1,8 @@
 #include "platform.h"
 
-#if __APPLE__
+#if __WASM__
+
+#elif __APPLE__
 
 FORCEINLINE void *allocate_new_chunk(void *start, u32 size)
 {

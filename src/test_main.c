@@ -87,7 +87,8 @@ int main(int argc, char **argv)
 
                     if (c == '\n' || is_first)
                         printf("\n\t\t");
-                    else
+                    
+                    if (c != '\n')
                         putc(c, stdout);
 
                     is_first = false;

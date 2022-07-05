@@ -13,6 +13,7 @@ MemArena create_arena(u32 init_size, u32 grow_size)
         .size = init_size,
         .used = __REGION_ARR_INIT_SIZE,
         .regions_arr = (MemRegion*) new_chunk,
+        .regions_arr_region = (MemRegion*) new_chunk,
         .regions_count = 1,
         .regions_capacity = PAGE_SIZE / sizeof(MemRegion),
     };
@@ -24,42 +25,102 @@ MemArena create_arena(u32 init_size, u32 grow_size)
     }
 
     MemRegion *first_region = arena.regions_arr;
-    first_region->region = (byte*) first_region + __REGION_ARR_INIT_SIZE;
-    first_region->size = init_size - __REGION_ARR_INIT_SIZE;
+    first_region->start = (byte*) first_region;
+    first_region->size = __REGION_ARR_INIT_SIZE;
+    first_region->is_alive = true;
+
+    MemRegion *second_region = arena.regions_arr + 1;
+    second_region->start = (byte*) second_region + __REGION_ARR_INIT_SIZE;
+    second_region->size = init_size - __REGION_ARR_INIT_SIZE;
+    second_region->is_alive = false;
 
     return arena;
+}
+
+static MemRegion add_region(MemArena *arena, byte *start, u32 size, bool is_alive)
+{
+    MemRegion *ptr_new_region = arena->regions_arr + arena->regions_count;
+        
+    if (arena->regions_count == arena->regions_capacity)
+    {
+        u32 prev_regions_capacity = arena->regions_capacity;
+                            
+        arena->regions_capacity *= 2;
+        u32 new_regions_arr_capacity = arena->regions_capacity;
+        u32 new_regions_arr_capacity_bytes = arena->regions_capacity * sizeof(MemRegion);
+
+        u32 grow_size = arena->grow_size;
+        while (grow_size <= new_regions_arr_capacity_bytes)
+            grow_size += arena->grow_size;
+
+        void *new_chunk = allocate_new_chunk(arena->arena + arena->size, grow_size);
+
+        if (!new_chunk)
+        {
+            log(ERROR, "mmap failed");
+            abort();
+        }
+        
+        arena->size += grow_size;
+        arena->used += prev_regions_capacity; // The regions vec capacity was doubled
+
+        size_t regions_arr_region_offset = arena->regions_arr_region - arena->regions_arr;
+
+        memcpy(new_chunk, arena->regions_arr, prev_regions_capacity * sizeof(MemRegion));
+        arena->regions_arr = new_chunk;
+        arena->regions_arr_region = new_chunk + regions_arr_region_offset;
+
+        // Region for new regions array
+        arena->regions_arr_region->is_alive = false;
+        ptr_new_region = (MemRegion*) new_chunk + prev_regions_capacity;
+        ptr_new_region->start = (byte*) new_chunk;
+        ptr_new_region->size = new_regions_arr_capacity_bytes;
+        ptr_new_region->is_alive = true;
+        arena->regions_arr_region = ptr_new_region;
+
+        // Region for new open memory
+        ++ptr_new_region;
+        ptr_new_region->start = (byte*) new_chunk + new_regions_arr_capacity_bytes;
+        ptr_new_region->size = grow_size - new_regions_arr_capacity_bytes;
+        ptr_new_region->is_alive = false;
+
+        // Region being added
+        ++ptr_new_region;
+        
+        arena->regions_count += 2;
+    }
+
+    ptr_new_region->start = start;
+    ptr_new_region->size = size;
+    ptr_new_region->is_alive = false;
+
+    ++arena->regions_count;
+
+    return *ptr_new_region;
 }
 
 void *_alloc_data(MemArena *restrict arena, u32 size)
 {
     arena->used += size;
-    assert(arena->used <= arena->size, "MemArena overflow");
 
-    byte *destination;
-    MemRegion *curr_region = arena->regions_arr;
-
-    for (; curr_region != arena->regions_arr + arena->regions_count; ++curr_region)
+    for (MemRegion *curr_region = arena->regions_arr;
+         curr_region != arena->regions_arr + arena->regions_count;
+         ++curr_region)
     {
-        if (curr_region->size < size)
+        if (curr_region->is_alive || curr_region->size < size)
             continue;
 
-        destination = curr_region->region;
+        byte *destination = curr_region->start;
 
         if (curr_region->size == size)
-        {
-            // Shift other regions down one index in the array, overwriting current index
-            for (MemRegion *prev_region = curr_region++;
-                 curr_region != arena->regions_arr + arena->regions_count;
-                 prev_region = curr_region++)
-            {
-                *prev_region = *curr_region;
-            }
-
-            --arena->regions_count;
-        }
+            curr_region->is_alive = true;
         else
-        {
-            curr_region->region += size;
+        {            
+            // Add new live region, taking space from curr_region
+            add_region(arena, curr_region->start, size, true);
+            
+            // Resize dead region that live region was taken from
+            curr_region->start += size;
             curr_region->size -= size;
         }
 
@@ -70,104 +131,79 @@ void *_alloc_data(MemArena *restrict arena, u32 size)
     while (grow_size <= size)
         grow_size += arena->grow_size;
 
-    if (arena->regions_count == arena->regions_capacity)
-    {
-        u32 prev_regions_size = arena->regions_capacity * sizeof(MemRegion);
-        
-        arena->regions_capacity *= 2;
-        u32 new_regions_vec_size = arena->regions_capacity * sizeof(MemRegion);
-        
-        void *new_chunk = allocate_new_chunk(arena->arena + arena->size, grow_size + new_regions_vec_size);
-
-        if (!new_chunk)
-        {
-            log(ERROR, "mmap failed");
-            abort();
-        }
-        
-        arena->size += grow_size + new_regions_vec_size;
-        arena->used += new_regions_vec_size - arena->regions_capacity * sizeof(MemRegion);
-
-        memcpy(new_chunk, arena->regions_arr, prev_regions_size);
-        arena->regions_arr = new_chunk;
-        
-        MemRegion *ptr_next_region = new_chunk + prev_regions_size;
-        ptr_next_region->region = (byte*) new_chunk;
-        ptr_next_region->size = new_regions_vec_size;
-        ++arena->regions_count;
-
-        destination = (byte*) new_chunk + new_regions_vec_size;
-    }
-    else
-    {
-        void *new_chunk = allocate_new_chunk(arena->arena + arena->size, grow_size);
-
-        if (!new_chunk)
-        {
-            log(ERROR, "mmap failed");
-            abort();
-        }
-        
-        arena->size += grow_size;
-        destination = (byte*) new_chunk;
-    }
-
-    MemRegion *next_region = arena->regions_arr + arena->regions_count;
-    next_region->region = destination + size;
-    next_region->size = grow_size - size;
-    ++arena->regions_count;
+    void *new_chunk = allocate_new_chunk(arena->arena + arena->size, grow_size);
     
-    return destination;
+    if (!new_chunk)
+    {
+        log(ERROR, "mmap failed");
+        abort();
+    }
+    
+    arena->size += grow_size;
+    
+    // TODO: Create region for empty space in addition to alloced space
+    add_region(arena, (byte*) new_chunk + size, grow_size - size, false);
+    add_region(arena, (byte*) new_chunk, size, true);
+
+    return (byte*) new_chunk;
 }
 
-void arena_free(MemArena *restrict arena, void *restrict ptr, u32 size)
+void arena_free(MemArena *restrict arena, void *restrict ptr)
 {
     // TODO: Consider making regions_arr into a hash table to do this in constant time
-    for (MemRegion *curr_i = arena->regions_arr; curr_i != arena->regions_arr + arena->regions_count; ++curr_i)
+    MemRegion *curr = arena->regions_arr;
+    for (; curr->start != ptr; ++curr);
+
+    MemRegion *region_before = 0;
+    MemRegion *region_after = 0;
+
+    if (curr != arena->regions_arr
+        && !(curr - 1)->is_alive
+        && (curr - 1)->start + (curr - 1)->size == ptr)
     {
-        if (curr_i->region == (byte*) ptr)
+        region_before = curr - 1;
+    }
+
+    if (curr != arena->regions_arr + arena->regions_count - 1
+        && !(curr + 1)->is_alive
+        && (curr + 1)->start == ptr + curr->size)
+    {
+        region_after = curr + 1;
+    }
+
+    if (!region_before && !region_after)
+        curr->is_alive = false;
+    else if (region_before && region_after)
+    {
+        region_before->size += (curr->size + region_after->size);
+
+        if (curr + 2 < arena->regions_arr + arena->regions_count)
         {
-            MemRegion *region_before = 0;
-            MemRegion *region_after = 0;
-            
-            for (MemRegion *curr_j = arena->regions_arr; curr_j != arena->regions_arr + arena->regions_count; ++curr_j)
-            {
-                if (curr_j->region + curr_j->size == ptr)
-                    region_before = curr_j;
-                else if (curr_j->region == ptr + size)
-                    region_after = curr_j;
-
-                if (region_before && region_after)
-                    break;
-            }
-
-            if (region_before && region_after)
-            {
-                region_before->size += (size + region_after->size);
-                
-                for (MemRegion *prev = region_after, *curr_k = region_after + 1;
-                     curr_k != arena->regions_arr + arena->regions_count;
-                     ++prev, ++curr_k)
-                {
-                    *prev = *curr_k;
-                }
-
-                --arena->regions_count;
-            }
-            else if (region_before)
-                region_before->size += size;
-            else if (region_after)
-                region_after->region -= size;
-            else
-            {
-                MemRegion *next_region = arena->regions_arr + arena->regions_count;
-                next_region->region = (byte*) ptr;
-                next_region->size = size;
-                ++arena->regions_count;
-            }
-
-            break;
+            memmove(curr,
+                    curr + 2,
+                    (byte*) (arena->regions_arr + arena->regions_count) - (byte*) (curr + 2));
         }
+        
+        arena->regions_count -= 2;
+    }
+    else if (region_before)
+    {
+        region_before->size += curr->size;
+                
+        memmove(curr,
+                region_after,
+                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) region_after);
+        --arena->regions_count;
+    }
+    else // region_after
+    {
+        curr->is_alive = false;
+        curr->size += region_after->size;
+        
+        memmove(region_after,
+                region_after + 1,
+                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) (region_after + 1));
+        --arena->regions_count;
     }
 }
 
@@ -201,8 +237,42 @@ static TEST_RESULT test_alloc()
     array3[PAGE_SIZE + 9] = 42;
 
     alloc_array(&mem, PAGE_SIZE, byte);
-    // alloc_array(&mem, PAGE_SIZE, byte);
+    assert(array3[PAGE_SIZE + 9] == 42, "Memory was incorrectly overwritten");
 
+    return TEST_PASS;
+}
+
+// static TEST_RESULT test_alloc_memory_regions()
+// {
+//     MemArena mem = create_arena(PAGE_SIZE * 4, PAGE_SIZE * 2);
+
+//     for (
+    
+//     return TEST_PASS;    
+// }
+
+static TEST_RESULT test_free()
+{
+    MemArena mem = create_arena(PAGE_SIZE * 4, PAGE_SIZE * 2);
+
+    void *arr1 = alloc_array(&mem, 10, byte);
+    void *arr2 = alloc_array(&mem, 10, byte);
+    void *arr3 = alloc_array(&mem, 10, byte);
+
+    assert(mem.used == PAGE_SIZE + 30, "");
+    assert(mem.regions_count == 1, "");
+    assert(mem.regions_arr[0].start == (byte*) mem.regions_arr, "");
+    assert(mem.regions_arr[0].size == PAGE_SIZE, "");
+    assert(mem.regions_arr[1].start == arr3 + 10, "");
+    assert(mem.regions_arr[1].size == mem.size - mem.used, "");
+    
+    arena_free(&mem, arr2);
+
+    return TEST_PASS;
+}
+
+static TEST_RESULT test_free_memory_regions()
+{
     return TEST_PASS;
 }
 
@@ -214,8 +284,9 @@ ModuleTestSet memory_h_register_tests()
         .count = 0,
     };
 
-    register_test(&set, "Memory allocation works correctly", test_alloc);
-
+    register_test(&set, "Memory allocation", test_alloc);
+    register_test(&set, "Freeing memory", test_free);
+    
     return set;
 }
 
