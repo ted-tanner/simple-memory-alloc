@@ -10,7 +10,7 @@
 #include "intrinsics.h"
 #include "platform.h"
 
-#define __REGION_ARR_INIT_SIZE PAGE_SIZE
+#define __REGION_ARR_INIT_SIZE  (2 * PAGE_SIZE)
 
 typedef struct {
     byte *start;
