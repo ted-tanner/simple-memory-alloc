@@ -103,9 +103,9 @@ void *_alloc_data(MemArena *restrict arena, u32 size)
 {
     arena->used += size;
 
-    for (MemRegion *curr_region = arena->regions_arr;
-         curr_region != arena->regions_arr + arena->regions_count;
-         ++curr_region)
+    for (MemRegion *curr_region = arena->regions_arr + arena->regions_count - 1;
+         curr_region >= arena->regions_arr;
+         --curr_region)
     {
         if (curr_region->is_alive || curr_region->size < size)
             continue;
@@ -115,7 +115,7 @@ void *_alloc_data(MemArena *restrict arena, u32 size)
         if (curr_region->size == size)
             curr_region->is_alive = true;
         else
-        {            
+        {
             // Add new live region, taking space from curr_region
             add_region(arena, curr_region->start, size, true);
             
@@ -151,65 +151,103 @@ void *_alloc_data(MemArena *restrict arena, u32 size)
 void arena_free(MemArena *restrict arena, void *restrict ptr)
 {
     // TODO: Consider making regions_arr into a hash table to do this in constant time
-    MemRegion *curr = arena->regions_arr;
-    for (; curr->start != ptr; ++curr);
+    MemRegion *ptr_region = 0;
+    
+    MemRegion *dead_region_before = 0;
+    MemRegion *dead_region_after = 0;
 
-    MemRegion *region_before = 0;
-    MemRegion *region_after = 0;
-
-    if (curr != arena->regions_arr
-        && !(curr - 1)->is_alive
-        && (curr - 1)->start + (curr - 1)->size == ptr)
+    for (MemRegion *curr = arena->regions_arr + arena->regions_count - 1;
+         curr >= arena->regions_arr;
+         --curr)
     {
-        region_before = curr - 1;
-    }
 
-    if (curr != arena->regions_arr + arena->regions_count - 1
-        && !(curr + 1)->is_alive
-        && (curr + 1)->start == ptr + curr->size)
-    {
-        region_after = curr + 1;
-    }
-
-    if (!region_before && !region_after)
-        curr->is_alive = false;
-    else if (region_before && region_after)
-    {
-        region_before->size += (curr->size + region_after->size);
-
-        if (curr + 2 < arena->regions_arr + arena->regions_count)
+        if (curr->start == ptr)
+            ptr_region = curr;
+        else if (!curr->is_alive)
         {
-            memmove(curr,
-                    curr + 2,
-                    (byte*) (arena->regions_arr + arena->regions_count) - (byte*) (curr + 2));
+            if(curr->start + curr->size == ptr)
+            {
+                dead_region_before = curr;
+
+                if (dead_region_after)
+                    break;
+            }
+            else if (ptr_region && curr->start - ptr_region->size == ptr)
+            {
+                dead_region_after = curr;
+
+                if (dead_region_before)
+                    break;
+
+            }
         }
+    }
+
+    if (!ptr_region)
+    {
+        assert(false, "Attempted to free a pointer that wasn't allocated");
+        return;
+    }
+
+    // TODO: Seg fault comes between here and the next TODO
+    if (!dead_region_before && !dead_region_after)
+        ptr_region->is_alive = false;
+    else if (dead_region_before && dead_region_after)
+    {
+        dead_region_before->size += (ptr_region->size + dead_region_after->size);
+
+        memmove(ptr_region,
+                ptr_region + 1,
+                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) ptr_region);
+
+        memmove(dead_region_after,
+                dead_region_after + 1,
+                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) dead_region_after);
         
         arena->regions_count -= 2;
     }
-    else if (region_before)
+    else if (dead_region_before)
     {
-        region_before->size += curr->size;
-                
-        memmove(curr,
-                region_after,
-                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) region_after);
-        --arena->regions_count;
-    }
-    else // region_after
-    {
-        curr->is_alive = false;
-        curr->size += region_after->size;
+        dead_region_before->size += ptr_region->size;
+
+        memmove(ptr_region,
+                ptr_region + 1,
+                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) ptr_region);
         
-        memmove(region_after,
-                region_after + 1,
-                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) (region_after + 1));
         --arena->regions_count;
     }
+    else // dead_region_after
+    {
+        dead_region_after->start -= ptr_region->size;
+        dead_region_after->size += ptr_region->size;
+
+        memmove(ptr_region,
+                ptr_region + 1,
+                (byte*) (arena->regions_arr + arena->regions_count) - (byte*) ptr_region);
+
+        --arena->regions_count;
+    }
+    // TODO
 }
 
 #ifdef TEST_MODE
 
-static TEST_RESULT test_alloc()
+static void print_arena_details(MemArena *arena)
+{
+    printf("-----------------------------------------\n\n");
+    
+    for (u32 i = 0; i < arena->regions_count; ++i)
+    {
+        MemRegion curr_region = arena->regions_arr[i];
+        printf("Start: %p\n", curr_region.start);
+        printf("Size: %u\n", curr_region.size);
+        printf("Alive: %s\n\n", curr_region.is_alive ? "Yes" : "No");
+    }
+
+    printf("-----------------------------------------\n\n\n");
+}
+
+static TEST_RESULT test_alloc_and_free()
 {
     MemArena mem = create_arena(PAGE_SIZE * 5, PAGE_SIZE * 2);
 
@@ -241,7 +279,7 @@ static TEST_RESULT test_alloc()
     assert(empty_region->start == empty_region_start_before_alloc + array1_size, "Incorrect region position");
     assert(empty_region->size == empty_region_size_before_alloc - array1_size, "Incorrect region size");
     assert(!empty_region->is_alive, "Incorrect region liveness");
-
+    
     const u32 array2_size = 9;
     byte *array2 = (byte*) alloc_array(&mem, array2_size, byte);
     assert(array2 == array1 + array1_size, "Alloc'ed memory not aligned as expected");
@@ -256,30 +294,82 @@ static TEST_RESULT test_alloc()
     assert(empty_region->start == array1 + array1_size + array2_size, "Incorrect region position");
     assert(empty_region->size == empty_region_size_before_alloc - array1_size - array2_size, "Incorrect region size");
     assert(!empty_region->is_alive, "Incorrect region liveness");
+
+    const u32 array3_size = 12;
+    byte *array3 = (byte*) alloc_array(&mem, array3_size, byte);
+    assert(mem.regions_count == regions_count_before_alloc + 3, "Unexpected number of regions");
     
-    // byte *array3 = (byte*) alloc_array(&mem, PAGE_SIZE + 10, byte);
-    // assert(array3 == array1 + PAGE_SIZE - 10, "Alloc'ed memory not aligned as expected");
-    // assert(mem.used == usage_before_alloc + 2 * PAGE_SIZE, "Incorrect arena usage after allocation");
-    // assert(mem.size == starting_capacity, "Arena size changed when it should not have");
-    // assert(mem.regions_count == 1, "Unexpected number of regions");
+    assert(mem.regions_arr[mem.regions_count - 1].start == array3, "Incorrect region position");
+    assert(mem.regions_arr[mem.regions_count - 1].size == array3_size, "Incorrect region size");
+    assert(mem.regions_arr[mem.regions_count - 1].is_alive, "Incorrect region liveness");
 
-    // // Make sure no seg fault occurs
-    // array3[PAGE_SIZE + 9] = 42;
+    arena_free(&mem, array2);
 
-    // alloc_array(&mem, PAGE_SIZE, byte);
-    // assert(array3[PAGE_SIZE + 9] == 42, "Memory was incorrectly overwritten");
+    assert(mem.regions_count == regions_count_before_alloc + 3, "Unexpected number of regions");
+
+    assert(mem.regions_arr[mem.regions_count - 1].start == array3, "Incorrect region position");
+    assert(mem.regions_arr[mem.regions_count - 1].size == array3_size, "Incorrect region size");
+    assert(mem.regions_arr[mem.regions_count - 1].is_alive, "Incorrect region liveness");
+
+    assert(mem.regions_arr[mem.regions_count - 2].start == array2, "Incorrect region position");
+    assert(mem.regions_arr[mem.regions_count - 2].size == array2_size, "Incorrect region size");
+    assert(!mem.regions_arr[mem.regions_count - 2].is_alive, "Incorrect region liveness");
+
+    const u32 array4_size = array2_size;
+    byte *array4 = (byte*) alloc_array(&mem, array4_size, byte);
+    assert(mem.regions_count == regions_count_before_alloc + 3, "Unexpected number of regions");
+    assert(array2 == array4, "array2 and array4 should point to the same location");
+
+    assert(mem.regions_arr[mem.regions_count - 2].start == array4, "Incorrect region position");
+    assert(mem.regions_arr[mem.regions_count - 2].size == array4_size, "Incorrect region size");
+    assert(mem.regions_arr[mem.regions_count - 2].is_alive, "Incorrect region liveness");
+
+    // Region after
+    u32 region_after_size_before_free = mem.regions_arr[1].size;
+    arena_free(&mem, array3);
+    assert(mem.regions_count == regions_count_before_alloc + 2, "Unexpected number of regions");
+
+    assert(mem.regions_arr[1].start == array3, "Incorrect region position");
+    assert(mem.regions_arr[1].size == region_after_size_before_free + array3_size, "Incorrect region size");
+    assert(!mem.regions_arr[1].is_alive, "Incorrect region liveness");
+
+    // Region before
+    const u32 array5_size = 50;
+    byte *array5 = (byte*) alloc_array(&mem, array5_size, byte);
+
+    const u32 array6_size = 60;
+    byte *array6 = (byte*) alloc_array(&mem, array6_size, byte);
+
+    const u32 array7_size = 70;
+    byte *array7 = (byte*) alloc_array(&mem, array7_size, byte);
+
+    arena_free(&mem, array5);
+    assert(mem.regions_count == regions_count_before_alloc + 5, "Unexpected number of regions");
+    arena_free(&mem, array6);
+    assert(mem.regions_count == regions_count_before_alloc + 4, "Unexpected number of regions");
+
+    assert(mem.regions_arr[mem.regions_count - 1].start == array7, "Incorrect region position");
+    assert(mem.regions_arr[mem.regions_count - 1].size == array7_size, "Incorrect region size");
+    assert(mem.regions_arr[mem.regions_count - 1].is_alive, "Incorrect region liveness");
+
+    assert(mem.regions_arr[mem.regions_count - 2].start == array5, "Incorrect region position");
+    assert(mem.regions_arr[mem.regions_count - 2].size == array5_size + array6_size, "Incorrect region size");
+    assert(!mem.regions_arr[mem.regions_count - 2].is_alive, "Incorrect region liveness");
+
+    // Regions before and after
+    u32 before_size_before_free = mem.regions_arr[mem.regions_count - 2].size;
+    u32 after_size_before_free = mem.regions_arr[1].size;
+    
+    arena_free(&mem, array7);
+    assert(mem.regions_count == regions_count_before_alloc + 2, "Unexpected number of regions");
+        
+    assert(mem.regions_arr[mem.regions_count - 1].start == array5, "Incorrect region position");
+    assert(mem.regions_arr[mem.regions_count - 1].size ==
+           before_size_before_free + array7_size + after_size_before_free, "Incorrect region size");
+    assert(!mem.regions_arr[mem.regions_count - 1].is_alive, "Incorrect region liveness");
 
     return TEST_PASS;
 }
-
-// static TEST_RESULT test_alloc_memory_regions()
-// {
-//     MemArena mem = create_arena(PAGE_SIZE * 4, PAGE_SIZE * 2);
-
-//     for (
-    
-//     return TEST_PASS;    
-// }
 
 static TEST_RESULT test_free()
 {
@@ -314,7 +404,7 @@ ModuleTestSet memory_h_register_tests()
         .count = 0,
     };
 
-    register_test(&set, "Memory allocation", test_alloc);
+    register_test(&set, "Memory alloc and free", test_alloc_and_free);
     // register_test(&set, "Freeing memory", test_free);
     
     return set;

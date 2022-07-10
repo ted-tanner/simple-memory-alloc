@@ -13,8 +13,16 @@ static void abort_handler(int signum) {
 
 int main(int argc, char **argv)
 {
-    ModuleTestSet test_sets[TEST_MAX_SET_COUNT] = {0};
+    bool no_capture = false;
 
+    for (u32 i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--no-capture") == 0)
+            no_capture = true;
+    }
+    
+    ModuleTestSet test_sets[TEST_MAX_SET_COUNT] = {0};
+    
     u32 test_set_count = 0;
     test_sets[test_set_count++] = memory_h_register_tests();
 
@@ -30,7 +38,7 @@ int main(int argc, char **argv)
         ModuleTestSet *set = test_sets + i;
 
         printf("\n%s\n", set->module_name);
-
+        
         for (int j = 0; j < set->count; ++j)
         {
             Test *test = set->tests + j;
@@ -38,12 +46,16 @@ int main(int argc, char **argv)
             printf("\t* Testing \"%s\" --> ", test->test_name);
             fflush(stdout);
 
-            // Redirect stdout
+            // Redirect stdout if --no-capture parameter wasn't specified
             int temp_stdout;
             int pipes[2];
-            temp_stdout = dup(fileno(stdout));
-            pipe(pipes);
-            dup2(pipes[1], fileno(stdout));
+
+            if (!no_capture)
+            {
+                temp_stdout = dup(fileno(stdout));
+                pipe(pipes);
+                dup2(pipes[1], fileno(stdout));
+            }
             
             TEST_RESULT result = TEST_FAIL;
 
@@ -52,12 +64,15 @@ int main(int argc, char **argv)
             if (!jmp_return)
                 result = test->test_func();
 
-            // Terminate test output with a zero
-            write(pipes[1], "", 1);
+            if (!no_capture)
+            {
+                // Terminate test output with a zero
+                write(pipes[1], "", 1);
 
-            // Restore stdout
-            fflush(stdout);
-            dup2(temp_stdout, fileno(stdout));
+                // Restore stdout
+                fflush(stdout);
+                dup2(temp_stdout, fileno(stdout));
+            }
 
             if (result == TEST_PASS)
             {
@@ -69,29 +84,32 @@ int main(int argc, char **argv)
                 printf("%s%s%s\n", ASCII_RED, "FAIL", ASCII_DEFAULT);
                 ++failed;
 
-                // Read output from test
-                bool is_first = true;
-                while (1)
+                if (!no_capture)
                 {
-                    char c;
-                    read(pipes[0], &c, 1);
-
-                    if (!c)
+                    // Read output from test
+                    bool is_first = true;
+                    while (1)
                     {
-                        if (!is_first)
-                            putc('\n', stdout);
+                        char c;
+                        read(pipes[0], &c, 1);
+
+                        if (!c)
+                        {
+                            if (!is_first)
+                                putc('\n', stdout);
                         
-                        break;
-                    }
+                            break;
+                        }
 
 
-                    if (c == '\n' || is_first)
-                        printf("\n\t\t");
+                        if (c == '\n' || is_first)
+                            printf("\n\t\t");
                     
-                    if (c != '\n')
-                        putc(c, stdout);
+                        if (c != '\n')
+                            putc(c, stdout);
 
-                    is_first = false;
+                        is_first = false;
+                    }
                 }
             }
         }
