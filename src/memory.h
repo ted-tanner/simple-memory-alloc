@@ -33,12 +33,14 @@ typedef struct {
 
 MemArena create_arena(u32 init_size, u32 grow_size);
 
-#define alloc_array(arena_ptr, count, type) _alloc_data((arena_ptr), sizeof(type) * (count))
-#define alloc_struct(arena_ptr, type) _alloc_data((arena_ptr), sizeof(type))
-
+void *arena_alloc(MemArena *restrict arena, u32 size);
+void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size);
 void arena_free(MemArena *restrict arena, void *restrict ptr);
 
-void *_alloc_data(MemArena *restrict arena, u32 size);
+#define alloc_array(arena_ptr, count, type) ((type*) arena_alloc((arena_ptr), sizeof(type) * (count)))
+#define alloc_struct(arena_ptr, type) ((type*) arena_alloc((arena_ptr), sizeof(type)))
+
+
 
 // TODO: Realloc
 
