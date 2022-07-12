@@ -30,7 +30,8 @@ typedef struct {
     u32 count;
 } ModuleTestSet;
 
-void register_test(ModuleTestSet* test_set, char *test_name, TestFunc test_func);
+#define register_test(test_set, test_func) _register_test(test_set, #test_func, test_func)
+void _register_test(ModuleTestSet* test_set, char *test_name, TestFunc test_func);
 
 #define __TEST_H
 #endif

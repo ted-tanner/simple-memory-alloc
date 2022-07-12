@@ -43,7 +43,7 @@ int main(int argc, char **argv)
         {
             Test *test = set->tests + j;
             
-            printf("\t* Testing \"%s\" --> ", test->test_name);
+            printf("\t* %s --> ", test->test_name);
             fflush(stdout);
 
             // Redirect stdout if --no-capture parameter wasn't specified

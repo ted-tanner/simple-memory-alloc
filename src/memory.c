@@ -564,7 +564,7 @@ ModuleTestSet memory_h_register_tests()
         .count = 0,
     };
 
-    register_test(&set, "Memory alloc and free", test_alloc_and_free);
+    register_test(&set, test_alloc_and_free);
     
     return set;
 }
