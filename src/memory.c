@@ -37,6 +37,8 @@ MemArena create_arena(u32 init_size, u32 grow_size)
     return arena;
 }
 
+// WARNING: This function overwrites part of the memory arena as a temporary buffer. This will need to be 
+//          changed if this function is used outside of the context of destroying the arena.
 static byte *merge_sort_regions_by_start(MemArena *restrict arena, u32 begin, u32 end)
 {
     u32 delta = end - begin;
@@ -58,9 +60,9 @@ static byte *merge_sort_regions_by_start(MemArena *restrict arena, u32 begin, u3
 
         if (partition2 < partition1)
         {
-            // Max space half of the regions_arr will take will be less than the space allocated
+            // Max size of half of regions_arr  will be less than the space allocated
             // in the arena that does NOT contain the regions_arr, so it can be used as a temp
-            // buffer (it is getting destroyed anyway. The regions array is at the beginning of
+            // buffer (it is getting destroyed anyway). The regions array is at the beginning of
             // the arena at first, but if it has been realloced, it will be at the end. Check
             // which is the case to determine where the temp buffer will go.
             byte *temp_buffer = (byte*) arena->regions_arr_region == arena->arena
@@ -68,7 +70,9 @@ static byte *merge_sort_regions_by_start(MemArena *restrict arena, u32 begin, u3
                 : (byte*) arena->regions_arr;
 
             memcpy(temp_buffer, arena->regions_arr + begin, (mid - begin) * sizeof(MemRegion));
-            memcpy(arena->regions_arr + begin, arena->regions_arr + (mid + 1), (end - (mid + 1)) * sizeof(MemRegion));
+            memcpy(arena->regions_arr + begin,
+                   arena->regions_arr + (mid + 1),
+                   (end - (mid + 1)) * sizeof(MemRegion));
             memcpy(arena->regions_arr + (mid + 1), temp_buffer, (mid - begin) * sizeof(MemRegion));
         }
     }
