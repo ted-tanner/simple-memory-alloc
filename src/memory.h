@@ -32,6 +32,7 @@ typedef struct {
 } MemArena;
 
 MemArena create_arena(u32 init_size, u32 grow_size);
+void destroy_arena(MemArena *restrict arena);
 
 void *arena_alloc(MemArena *restrict arena, u32 size);
 void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size);

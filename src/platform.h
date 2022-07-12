@@ -19,7 +19,8 @@
 #include "int.h"
 #include "intrinsics.h"
 
-void *allocate_new_chunk(void *start, u32 size);
+void *map_new_memory_chunk(void *start, u32 size);
+i32 unmap_memory_chunk(void *start, u32 size);
 
 // __linux__       Linux
 // __sun           Solaris

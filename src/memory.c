@@ -2,10 +2,10 @@
 
 MemArena create_arena(u32 init_size, u32 grow_size)
 {
-    assert(init_size != 0 && init_size >= 3 * PAGE_SIZE && init_size % PAGE_SIZE == 0, "Invalid init_size");
+    assert(init_size != 0 && init_size >= 2 * __REGION_ARR_INIT_SIZE && init_size % PAGE_SIZE == 0, "Invalid init_size");
     assert(grow_size != 0 && grow_size % PAGE_SIZE == 0, "Invalid grow_size");
     
-    void *new_chunk = allocate_new_chunk(0, init_size);
+    void *new_chunk = map_new_memory_chunk(0, init_size);
 
     MemArena arena = {
         .arena = (byte*) new_chunk,
@@ -20,7 +20,7 @@ MemArena create_arena(u32 init_size, u32 grow_size)
 
     if (!new_chunk)
     {
-        log(ERROR, "mmap failed");
+        log(ERROR, "Mapping memory from system failed");
         abort();
     }
 
@@ -35,6 +35,88 @@ MemArena create_arena(u32 init_size, u32 grow_size)
     second_region->is_alive = false;
 
     return arena;
+}
+
+static byte *merge_sort_regions_by_start(MemArena *restrict arena, u32 begin, u32 end)
+{
+    u32 delta = end - begin;
+    
+    if (delta == 2)
+    {
+        if (arena->regions_arr[end].start < arena->regions_arr[begin].start)
+        {
+            MemRegion temp = arena->regions_arr[end];
+            arena->regions_arr[end] = arena->regions_arr[begin];
+            arena->regions_arr[begin] = temp;
+        }
+    }
+    else if (delta != 1)
+    {
+        u32 mid = delta / 2;
+        byte *partition1 = merge_sort_regions_by_start(arena, begin, mid);
+        byte *partition2 = merge_sort_regions_by_start(arena, mid + 1, end);
+
+        if (partition2 < partition1)
+        {
+            // Max space half of the regions_arr will take will be less than the space allocated
+            // in the arena that does NOT contain the regions_arr, so it can be used as a temp
+            // buffer (it is getting destroyed anyway. The regions array is at the beginning of
+            // the arena at first, but if it has been realloced, it will be at the end. Check
+            // which is the case to determine where the temp buffer will go.
+            byte *temp_buffer = (byte*) arena->regions_arr_region == arena->arena
+                ? (byte*) (arena->regions_arr + arena->regions_count)
+                : (byte*) arena->regions_arr;
+
+            memcpy(temp_buffer, arena->regions_arr + begin, (mid - begin) * sizeof(MemRegion));
+            memcpy(arena->regions_arr + begin, arena->regions_arr + (mid + 1), (end - (mid + 1)) * sizeof(MemRegion));
+            memcpy(arena->regions_arr + (mid + 1), temp_buffer, (mid - begin) * sizeof(MemRegion));
+        }
+    }
+
+    return arena->regions_arr[begin].start;
+}
+
+void destroy_arena(MemArena *restrict arena)
+{
+    merge_sort_regions_by_start(arena, 0, arena->regions_count - 1);
+
+    // Appropriate is_alive to mark region as beginning of memory page
+    arena->regions_arr->is_alive = true;
+
+    for (MemRegion *prev = arena->regions_arr, *curr = arena->regions_arr + 1;
+         curr != arena->regions_arr + arena->regions_count;
+         ++prev, ++curr)
+    {
+        if (curr->start == prev->start + prev->size)
+        {
+            curr->is_alive = false;
+            prev->size += curr->size;
+        }
+        else
+            curr->is_alive = true;
+    }
+
+    for (MemRegion *curr = arena->regions_arr;
+         curr != arena->regions_arr + arena->regions_count;
+         ++curr)
+    {
+        // Don't free regions array quite yet
+        if (curr >= arena->regions_arr && curr < arena->regions_arr + arena->regions_count)
+            continue;
+        
+        if (curr->is_alive)
+            unmap_memory_chunk(curr->start, curr->size);
+    }
+
+    unmap_memory_chunk(arena->regions_arr, arena->regions_capacity * sizeof(MemRegion));
+
+    arena->arena = 0;
+    arena->size = 0;
+    arena->used = 0;
+    arena->regions_arr = 0;
+    arena->regions_arr_region = 0;
+    arena->regions_count = 0;
+    arena->regions_capacity = 0;
 }
 
 static MemRegion add_region(MemArena *arena, byte *start, u32 size, bool is_alive)
@@ -53,11 +135,11 @@ static MemRegion add_region(MemArena *arena, byte *start, u32 size, bool is_aliv
         while (grow_size <= new_regions_arr_capacity_bytes)
             grow_size += arena->grow_size;
 
-        void *new_chunk = allocate_new_chunk(arena->arena + arena->size, grow_size);
+        void *new_chunk = map_new_memory_chunk(arena->arena + arena->size, grow_size);
 
         if (!new_chunk)
         {
-            log(ERROR, "mmap failed");
+            log(ERROR, "Mapping memory from system failed");
             abort();
         }
         
@@ -137,11 +219,11 @@ void *arena_alloc(MemArena *restrict arena, u32 size)
     while (grow_size <= size)
         grow_size += arena->grow_size;
 
-    void *new_chunk = allocate_new_chunk(arena->arena + arena->size, grow_size);
+    void *new_chunk = map_new_memory_chunk(arena->arena + arena->size, grow_size);
     
     if (!new_chunk)
     {
-        log(ERROR, "mmap failed");
+        log(ERROR, "Mapping memory from system failed");
         abort();
     }
     
@@ -462,8 +544,13 @@ static TEST_RESULT test_alloc_and_free()
            before_size_before_free + array7_size + after_size_before_free, "Incorrect region size");
     assert(!mem.regions_arr[mem.regions_count - 1].is_alive, "Incorrect region liveness");
 
+    destroy_arena(&mem);
+
     return TEST_PASS;
 }
+
+// TODO: Test filling up regions array
+// TODO: Test realloc
 
 ModuleTestSet memory_h_register_tests()
 {
