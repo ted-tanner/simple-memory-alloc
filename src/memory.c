@@ -5,7 +5,7 @@ MemArena create_arena(u32 init_size, u32 grow_size)
     assert(init_size != 0 && init_size >= 2 * __REGION_ARR_INIT_SIZE && init_size % PAGE_SIZE == 0, "Invalid init_size");
     assert(grow_size != 0 && grow_size % PAGE_SIZE == 0, "Invalid grow_size");
     
-    void *new_chunk = map_new_memory_chunk(0, init_size);
+    void *new_chunk = map_new_memory_chunk(init_size);
 
     MemArena arena = {
         .arena = (byte*) new_chunk,
@@ -139,14 +139,14 @@ static MemRegion add_region(MemArena *arena, byte *start, u32 size, bool is_aliv
         while (grow_size <= new_regions_arr_capacity_bytes)
             grow_size += arena->grow_size;
 
-        void *new_chunk = map_new_memory_chunk(arena->arena + arena->size, grow_size);
+        void *new_chunk = map_new_memory_chunk(grow_size);
 
         if (!new_chunk)
         {
             log(ERROR, "Mapping memory from system failed");
             abort();
         }
-        
+
         arena->size += grow_size;
         arena->used += prev_regions_capacity; // The regions vec capacity was doubled
 
@@ -223,14 +223,14 @@ void *arena_alloc(MemArena *restrict arena, u32 size)
     while (grow_size <= size)
         grow_size += arena->grow_size;
 
-    void *new_chunk = map_new_memory_chunk(arena->arena + arena->size, grow_size);
+    void *new_chunk = map_new_memory_chunk(grow_size);
     
     if (!new_chunk)
     {
         log(ERROR, "Mapping memory from system failed");
         abort();
     }
-    
+
     arena->size += grow_size;
     
     // Create region for empty space in addition to alloced space

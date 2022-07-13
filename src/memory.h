@@ -41,8 +41,6 @@ void arena_free(MemArena *restrict arena, void *restrict ptr);
 #define alloc_array(arena_ptr, count, type) ((type*) arena_alloc((arena_ptr), sizeof(type) * (count)))
 #define alloc_struct(arena_ptr, type) ((type*) arena_alloc((arena_ptr), sizeof(type)))
 
-// TODO: Expand arena
-
 // TODO: Functions to create and use a TransitoryArena within the MemArena with less allocation overhead that
 //       can only be freed all at once
 
