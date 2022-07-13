@@ -54,7 +54,7 @@ static byte *merge_sort_regions_by_start(MemArena *restrict arena, u32 begin, u3
     }
     else if (delta != 1)
     {
-        u32 mid = delta / 2;
+        u32 mid = begin + delta / 2;
         byte *partition1 = merge_sort_regions_by_start(arena, begin, mid);
         byte *partition2 = merge_sort_regions_by_start(arena, mid + 1, end);
 
@@ -250,7 +250,7 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
     {
         if (curr->start == ptr)
         {
-            ptr_region = curr;
+            ptr_region = curr->is_alive ? curr : 0;
             break;
         }
     }
@@ -264,19 +264,36 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
     if (new_size == ptr_region->size)
         return ptr;
 
-    u32 delta = ptr_region->size - new_size;
+    u32 delta = ptr_region->size >= new_size ? ptr_region->size - new_size : new_size - ptr_region->size;
     arena->used += delta;
 
     MemRegion *restrict region_after = 0;
+    MemRegion *restrict region_before = 0;
+
+    // The pointers will remain at 0 if region is alive so these are needed to track
+    // whether regions have been found
+    bool found_region_after = false;
+    bool found_region_before = false;
 
     for (MemRegion *curr = arena->regions_arr + arena->regions_count - 1;
          curr >= arena->regions_arr;
          --curr)
     {
-        if (curr->start == ptr_region->start + ptr_region->size)
+        if (!found_region_after && curr->start == ptr_region->start + ptr_region->size)
         {
+            found_region_after = true;
             region_after = curr->is_alive ? curr : 0;
-            break;
+
+            if (found_region_before)
+                break;
+        }
+        else if (!found_region_before && curr->start + curr->size == ptr_region->start)
+        {
+            found_region_before = true;
+            region_before = curr->is_alive ? curr : 0;
+
+            if (found_region_after)
+                break;
         }
     }
 
@@ -289,31 +306,56 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
             region_after->start -= delta;
             region_after->size += delta;
         }
+        else if (region_before)
+        {
+            region_before->size += delta;
+            ptr_region->start += delta;
+        }
         else
             add_region(arena, ptr_region->start + new_size, delta, false);
 
-        return ptr;
+        return ptr_region->start;
     }
     else
     {
-        if (region_after)
+        u32 combined_regions_size;
+        
+        if (region_after && (combined_regions_size = ptr_region->size + region_after->size) >= new_size)
         {
-            u32 combined_regions_size = ptr_region->size + region_after->size;
-
-            if (combined_regions_size > new_size)
+            if (combined_regions_size == new_size)
+            {
+                ptr_region->size = new_size;
+                remove_region(arena, region_after);
+            }
+            else
             {
                 ptr_region->size = new_size;
                 region_after->start += delta;
                 region_after->size -= delta;
             }
-            else if (combined_regions_size == new_size)
+
+            return ptr;
+        }
+        else if (region_before && (combined_regions_size = ptr_region->size + region_before->size) >= new_size)
+        {
+            if (combined_regions_size == new_size)
             {
+                ptr_region->start = region_before->start;
                 ptr_region->size = new_size;
-                remove_region(arena, region_after);
+                
+                remove_region(arena, region_before);
             }
+            else
+            {
+                ptr_region->start -= delta;
+                region_before->size -= delta;
+                ptr_region->size = new_size;
+            }
+
+            return ptr_region->start;
         }
         else
-        {
+        {   
             void *new_mem_block = arena_alloc(arena, new_size);
 
             // alloc_arena will increase arena->used, but the delta has already been added so we need
@@ -322,6 +364,8 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
             
             memcpy(new_mem_block, ptr_region->start, ptr_region->size);
             ptr_region->is_alive = false;
+
+            return new_mem_block;
         }
     }
 
@@ -429,7 +473,7 @@ static TEST_RESULT test_alloc_and_free()
            "Incorrect starting dead region size");
     assert(!empty_region->is_alive,"Incorrect starting dead region liveness");
 
-    const u32 array1_size = PAGE_SIZE - 19;
+    const u32 array1_size = PAGE_SIZE + 19;
     byte *array1 = (byte*) arena_alloc(&mem, array1_size);
     assert(mem.used == usage_before_alloc + array1_size, "Incorrect arena usage after allocation");
     assert(mem.size == starting_capacity, "Arena size changed when it should not have");
@@ -553,8 +597,70 @@ static TEST_RESULT test_alloc_and_free()
     return TEST_PASS;
 }
 
-// TODO: Test filling up regions array
-// TODO: Test realloc
+static TEST_RESULT test_add_region()
+{
+    MemArena mem = create_arena(PAGE_SIZE * 10, PAGE_SIZE * 2);
+
+    u32 starting_regions_capacity = mem.regions_capacity;
+    u32 starting_regions_count = mem.regions_count;
+
+    assert((byte*) mem.regions_arr == mem.arena,
+           "Regions array at unexpected location");
+    assert(mem.regions_capacity == __REGION_ARR_INIT_SIZE / sizeof(MemRegion),
+           "Unexpected regions array capacity");
+        
+    for (u32 i = 0; i < starting_regions_capacity - starting_regions_count; ++i)
+        arena_alloc(&mem, 1);
+
+    assert((byte*) mem.regions_arr == mem.arena,
+           "Regions array at unexpected location");
+    assert(mem.regions_capacity == __REGION_ARR_INIT_SIZE / sizeof(MemRegion),
+           "Unexpected regions array capacity");
+
+    arena_alloc(&mem, 1);
+
+    assert((byte*) mem.regions_arr != mem.arena,
+           "Regions array at unexpected location");
+    assert(mem.regions_capacity == starting_regions_capacity * 2,
+           "Unexpected regions array capacity");
+
+    destroy_arena(&mem);
+    
+    return TEST_PASS;
+}
+
+static TEST_RESULT test_realloc()
+{
+    MemArena mem = create_arena(PAGE_SIZE * 5, PAGE_SIZE * 2);
+
+    const u32 array1_size = 100;
+    void *array1 = arena_alloc(&mem, array1_size);
+
+    byte *array1_pos = mem.regions_arr[mem.regions_count - 1].start;
+    u32 arena_used_before_realloc = mem.used;
+    u32 arena_regions_before_realloc = mem.regions_count;
+    
+    u32 realloc_size = 100;
+    arena_realloc(&mem, array1, realloc_size);
+
+    assert(mem.used == arena_used_before_realloc, "");
+    assert(mem.regions_count == arena_regions_before_realloc, "");
+    assert(mem.regions_arr[mem.regions_count - 1].size == array1_size, "");
+    assert(mem.regions_arr[mem.regions_count - 1].start == array1_pos, "");
+
+    realloc_size = 200;
+    arena_realloc(&mem, array1, realloc_size);
+
+    assert(mem.used == arena_used_before_realloc + (realloc_size - array1_size), "");
+    assert(mem.regions_count == arena_regions_before_realloc, "");
+
+
+    // TODO: Finsih testing all the cases (there are 8)
+    
+    destroy_arena(&mem);
+    
+    return TEST_PASS;
+}
 
 ModuleTestSet memory_h_register_tests()
 {
@@ -565,6 +671,8 @@ ModuleTestSet memory_h_register_tests()
     };
 
     register_test(&set, test_alloc_and_free);
+    register_test(&set, test_add_region);
+    register_test(&set, test_realloc);
     
     return set;
 }
