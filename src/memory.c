@@ -209,7 +209,7 @@ void *arena_alloc(MemArena *restrict arena, u32 size)
         else
         {
             // Add new live region, taking space from curr_region
-            add_region(arena, curr_region->start, size, true);
+            add_region(arena, destination, size, true);
             
             // Resize dead region that live region was taken from
             curr_region->start += size;
@@ -264,13 +264,13 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
     if (new_size == ptr_region->size)
         return ptr;
 
-    i64 delta = new_size - ptr_region->size;
+    i64 delta = (i64) new_size - (i64) ptr_region->size;
     arena->used += delta;
 
     MemRegion *restrict region_after = 0;
     MemRegion *restrict region_before = 0;
 
-    // The pointers will remain at 0 if region is alive so these are needed to track
+    // The pointers will remain at 0 if regions are alive so these are needed to track
     // whether regions have been found
     bool found_region_after = false;
     bool found_region_before = false;
@@ -303,17 +303,15 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
 
         if (region_after)
         {
-            // TODO: Test
             region_after->start += delta;
             region_after->size -= delta;
         }
         else if (region_before)
         {
-            // TODO: Test
             region_before->size -= delta;
             ptr_region->start -= delta;
         }
-        else // TODO: Test
+        else // TODO: Test 
             add_region(arena, ptr_region->start + new_size, -delta, false);
 
         return ptr_region->start;
@@ -351,7 +349,6 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
             }
             else
             {
-                // TODO
                 ptr_region->start -= delta;
                 region_before->size -= delta;
                 ptr_region->size = new_size;
@@ -603,6 +600,29 @@ static TEST_RESULT test_alloc_and_free()
     return TEST_PASS;
 }
 
+static TEST_RESULT test_alloc_fill_arena()
+{
+    const u32 init_arena_size = PAGE_SIZE * 6;
+    const u32 arena_grow_size = PAGE_SIZE * 2;
+    MemArena mem = create_arena(init_arena_size, arena_grow_size);
+
+    for (; mem.used != init_arena_size; arena_alloc(&mem, PAGE_SIZE));
+    assert(mem.size == init_arena_size, "");
+
+    arena_alloc(&mem, 1);
+    assert(mem.size == init_arena_size + arena_grow_size, "");
+    assert(mem.used == init_arena_size + 1, "");
+    
+    for (; mem.size == init_arena_size + arena_grow_size; arena_alloc(&mem, PAGE_SIZE));
+
+    assert(mem.size == init_arena_size + 2 * arena_grow_size, "");
+    
+    destroy_arena(&mem);
+
+    return TEST_PASS;
+}
+
+
 static TEST_RESULT test_add_region()
 {
     MemArena mem = create_arena(PAGE_SIZE * 10, PAGE_SIZE * 2);
@@ -645,11 +665,14 @@ static TEST_RESULT test_realloc()
     void *array1 = arena_alloc(&mem, array1_size);
 
     byte *array1_pos = mem.regions_arr[mem.regions_count - 1].start;
+    assert(array1_pos == array1, "");
+    
     u32 arena_regions_before_realloc = mem.regions_count;
 
     assert(mem.regions_arr[mem.regions_count - 1].size == array1_size, "");
     assert(mem.regions_arr[mem.regions_count - 1].start == array1_pos, "");
-    
+
+    // if, if
     u32 realloc_size = 100;
     arena_realloc(&mem, array1, realloc_size);
 
@@ -658,22 +681,99 @@ static TEST_RESULT test_realloc()
     assert(mem.regions_arr[mem.regions_count - 1].size == array1_size, "");
     assert(mem.regions_arr[mem.regions_count - 1].start == array1_pos, "");
 
+    // else, if, else
     realloc_size = 200;
-    byte *new_pos = (byte*) arena_realloc(&mem, array1, realloc_size);
+    byte *new_pos = arena_realloc(&mem, array1, realloc_size);
+    assert(new_pos == array1_pos, "");
 
     assert(mem.used == arena_used_before_alloc + realloc_size, "");
     assert(mem.regions_count == arena_regions_before_realloc, "");
     assert(mem.regions_arr[mem.regions_count - 1].size == realloc_size, "");
     assert(mem.regions_arr[mem.regions_count - 1].start == array1_pos, "");
 
+    // if, if
     realloc_size = 150;
-    arena_realloc(&mem, array1, realloc_size);
+    new_pos = arena_realloc(&mem, array1, realloc_size);
+    assert(new_pos == array1_pos, "");
 
     assert(mem.used == arena_used_before_alloc + realloc_size, "");
     assert(mem.regions_count == arena_regions_before_realloc, "");
     assert(mem.regions_arr[mem.regions_count - 1].size == realloc_size, "");
     assert(mem.regions_arr[mem.regions_count - 1].start == array1_pos, "");
+
+    // else, else if, else
+    const u32 array2_size = 50;
+    byte *array2 = arena_alloc(&mem, array2_size);
+    arena_alloc(&mem, 60);
+
+    arena_free(&mem, array1_pos);
+
+    u32 used_before_realloc = mem.used;
+    u32 regions_before_realloc = mem.regions_count;
+
+    u32 region_after_size_before_realloc = mem.regions_arr[mem.regions_count - 3].size;
+
+    realloc_size = 70;
+    void *new_array2 = arena_realloc(&mem, array2, realloc_size);
+
+    assert(mem.used == used_before_realloc + realloc_size - array2_size, "");
+    assert(mem.regions_count == regions_before_realloc, "");
+    assert(mem.regions_arr[mem.regions_count - 2].size == realloc_size, "");
+    assert(mem.regions_arr[mem.regions_count - 2].start == array2 - (realloc_size - array2_size), "");
+    assert(mem.regions_arr[mem.regions_count - 2].start == new_array2, "");
+
+    assert(mem.regions_arr[mem.regions_count - 3].size ==
+           region_after_size_before_realloc - (realloc_size - array2_size), "");
+    assert(mem.regions_arr[mem.regions_count - 3].start == array1, "");
     
+    // if, else if
+    used_before_realloc = mem.used;
+    regions_before_realloc = mem.regions_count;
+
+    u32 new_array2_size = realloc_size;
+    u32 region_before_size_before_realloc = mem.regions_arr[mem.regions_count - 3].size;
+
+    realloc_size = 40;
+    void *new_array2_after_realloc = arena_realloc(&mem, new_array2, realloc_size);
+
+    assert(mem.used == used_before_realloc + realloc_size - new_array2_size, "");
+    assert(mem.regions_count == regions_before_realloc, "");
+    assert(mem.regions_arr[mem.regions_count - 2].size == realloc_size, "");
+    assert(mem.regions_arr[mem.regions_count - 2].start == new_array2 + (new_array2_size - realloc_size), "");
+    assert(mem.regions_arr[mem.regions_count - 2].start == new_array2_after_realloc, "");
+
+    assert(mem.regions_arr[mem.regions_count - 3].size ==
+           region_before_size_before_realloc - (realloc_size - new_array2_size), "");
+    assert(mem.regions_arr[mem.regions_count - 3].start == array1, "");
+
+    // else, else if, if
+
+    arena_alloc(&mem, 1);
+    
+    const u32 array3_size = 250;
+    byte *array3 = arena_alloc(&mem, array3_size);
+
+    const u32 region_before_size = 2;
+    byte *region_before = arena_alloc(&mem, region_before_size);
+ 
+    arena_free(&mem, region_before);
+
+    used_before_realloc = mem.used;
+    regions_before_realloc = mem.regions_count;
+
+    region_after_size_before_realloc = mem.regions_arr[mem.regions_count - 3].size;
+    
+    print_arena_details(&mem);
+
+    realloc_size = array3_size + region_before_size;
+    void *new_array3 = arena_realloc(&mem, array3, realloc_size);
+
+    assert(mem.used == used_before_realloc + realloc_size - array3_size, "");
+    assert(mem.regions_count == regions_before_realloc - 1, "");
+    assert(mem.regions_arr[mem.regions_count - 2].size == realloc_size, "");
+    assert(mem.regions_arr[mem.regions_count - 2].start == array3 - (realloc_size - array3_size), "");
+    assert(mem.regions_arr[mem.regions_count - 2].start == new_array3, "");
+
     // TODO: Finish testing all the cases (there are 9)
     
     destroy_arena(&mem);
@@ -690,6 +790,7 @@ ModuleTestSet memory_h_register_tests()
     };
 
     register_test(&set, test_alloc_and_free);
+    register_test(&set, test_alloc_fill_arena);
     register_test(&set, test_add_region);
     register_test(&set, test_realloc);
     

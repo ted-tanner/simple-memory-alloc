@@ -12,6 +12,8 @@
 
 #define __REGION_ARR_INIT_SIZE  (2 * PAGE_SIZE)
 
+// TODO: Rather than an array, use an AA Tree for tracking regions
+
 typedef struct {
     byte *start;
     u32 size;
