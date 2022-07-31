@@ -48,7 +48,6 @@ void *memmove(void *dest, const void *src, size_t size)
     }
     else
     {
-        
         for (byte *curr = d + size; curr != dest;)
             *(--d) = *(--s);
     }
