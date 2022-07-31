@@ -3,7 +3,7 @@
 #include <setjmp.h>
 #include <stdlib.h>
 
-#include "int.h"
+#include "intrinsics.h"
 
 #define TEST_NAME_MAX_LEN 256
 #define TEST_SET_MAX_TESTS 64

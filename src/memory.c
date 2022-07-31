@@ -748,31 +748,31 @@ static TEST_RESULT test_realloc()
 
     // else, else if, if
 
-    arena_alloc(&mem, 1);
+    // arena_alloc(&mem, 1);
     
-    const u32 array3_size = 250;
-    byte *array3 = arena_alloc(&mem, array3_size);
+    // const u32 array3_size = 250;
+    // byte *array3 = arena_alloc(&mem, array3_size);
 
-    const u32 region_before_size = 2;
-    byte *region_before = arena_alloc(&mem, region_before_size);
+    // const u32 region_before_size = 2;
+    // byte *region_before = arena_alloc(&mem, region_before_size);
  
-    arena_free(&mem, region_before);
+    // arena_free(&mem, region_before);
 
-    used_before_realloc = mem.used;
-    regions_before_realloc = mem.regions_count;
+    // used_before_realloc = mem.used;
+    // regions_before_realloc = mem.regions_count;
 
-    region_after_size_before_realloc = mem.regions_arr[mem.regions_count - 3].size;
+    // region_after_size_before_realloc = mem.regions_arr[mem.regions_count - 3].size;
     
-    print_arena_details(&mem);
+    // print_arena_details(&mem);
 
-    realloc_size = array3_size + region_before_size;
-    void *new_array3 = arena_realloc(&mem, array3, realloc_size);
+    // realloc_size = array3_size + region_before_size;
+    // void *new_array3 = arena_realloc(&mem, array3, realloc_size);
 
-    assert(mem.used == used_before_realloc + realloc_size - array3_size, "");
-    assert(mem.regions_count == regions_before_realloc - 1, "");
-    assert(mem.regions_arr[mem.regions_count - 2].size == realloc_size, "");
-    assert(mem.regions_arr[mem.regions_count - 2].start == array3 - (realloc_size - array3_size), "");
-    assert(mem.regions_arr[mem.regions_count - 2].start == new_array3, "");
+    // assert(mem.used == used_before_realloc + realloc_size - array3_size, "");
+    // assert(mem.regions_count == regions_before_realloc - 1, "");
+    // assert(mem.regions_arr[mem.regions_count - 2].size == realloc_size, "");
+    // assert(mem.regions_arr[mem.regions_count - 2].start == array3 - (realloc_size - array3_size), "");
+    // assert(mem.regions_arr[mem.regions_count - 2].start == new_array3, "");
 
     // TODO: Finish testing all the cases (there are 9)
     

@@ -1,12 +1,7 @@
 #ifndef __MEMORY_H
 
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "assert.h"
 #include "debug.h"
-#include "int.h"
 #include "intrinsics.h"
 #include "platform.h"
 

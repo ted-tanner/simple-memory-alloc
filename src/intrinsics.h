@@ -1,6 +1,28 @@
 #ifndef __INTRINSICS_H
 
-// Don't go through the effort of requesting page size from OS (for now at least)
+// NOTE: 64-bit
+typedef signed char i8;
+typedef signed short int i16;
+typedef signed int i32;
+typedef signed long long int i64;
+
+typedef unsigned char u8;
+typedef unsigned short int u16;
+typedef unsigned int u32;
+typedef unsigned long long u64;
+
+typedef unsigned char byte;
+typedef unsigned long int size_t;
+
+#ifndef true
+
+typedef _Bool bool;
+#define true 1
+#define false 0
+
+#endif
+
+// TODO: Request page size from the OS instead
 #define PAGE_SIZE 4096
 
 #define mod_pow_2(operand1, operand2) ((operand1) & ((operand2) - 1))

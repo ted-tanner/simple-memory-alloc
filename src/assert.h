@@ -8,8 +8,7 @@
 #define _FUNC_ __PRETTY_FUNCTION__
 #endif
 
-#include <stdlib.h>
-#include <stdio.h>
+#include "platform.h"
 
 #define assert(condition, msg) if (condition)                           \
     { ((void)0); } else                                                 \

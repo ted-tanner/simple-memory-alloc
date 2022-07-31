@@ -1,5 +1,7 @@
 #ifndef __DEBUG_H
 
+#include "platform.h"
+
 #if defined(DEBUG_MODE) && !defined(TEST_MODE)
 
 enum LOG_LEVEL { DEBUG, INFO, ERROR };

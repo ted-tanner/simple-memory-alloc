@@ -1,9 +1,9 @@
 #include <setjmp.h>
 #include <signal.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 
+#include "intrinsics.h"
 #include "memory.h"
 #include "test.h"
 
