@@ -778,26 +778,32 @@ static TEST_RESULT test_realloc()
 
     // else, else if 1, if
 
-    const u32 region_before_size = 2;
-    byte *region_before = arena_alloc(&mem, region_before_size);
-    
-    const u32 array3_size = 250;
-    byte *array3 = arena_alloc(&mem, array3_size);
+    // Manually set up conditions for test
+    u32 temp_buffer_size = 1000;
+    byte *temp_buffer = arena_alloc(&mem, temp_buffer_size);
 
-        arena_alloc(&mem, 1000);
-
-        
-
-    // Using arena_free on region_before will coalesce region_before into an ajacent
-    // region. Just set is_alive to false on it.
+    MemRegion *temp_buffer_region = 0;
     for (u32 i = 0; i < mem.regions_count; ++i)
     {
-        if (mem.regions_arr[i].start == region_before)
+        if (mem.regions_arr[i].start == temp_buffer)
         {
-            mem.regions_arr[i].is_alive = false;
+            temp_buffer_region = mem.regions_arr + i;
             break;
         }
     }
+
+    assert(temp_buffer_region, "");
+    
+    u32 region_before_size = 185;
+    MemRegion region_before = add_region(&mem, temp_buffer_region->start, region_before_size, false);
+
+    u32 array3_size = 250;
+    add_region(&mem, temp_buffer_region->start + region_before_size, array3_size, false);
+        
+    u32 region_after_size = temp_buffer_size - array3_size - region_before_size;
+    MemRegion region_after = add_region(&mem, temp_buffer_region->start, region_after_size, true);
+
+    remove_region(&mem, temp_buffer_region);
 
     used_before_realloc = mem.used;
     regions_before_realloc = mem.regions_count;
