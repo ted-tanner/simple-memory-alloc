@@ -343,8 +343,6 @@ void *arena_realloc(MemArena *restrict arena, void *restrict ptr, u32 new_size)
         {                       
             if (combined_regions_size == new_size)
             {
-                printf("\n HERE!!!!! \n\n");
-                // TODO: Test
                 ptr_region->start = region_before->start;
                 ptr_region->size = new_size;
                 
@@ -798,8 +796,8 @@ static TEST_RESULT test_realloc()
     MemRegion region_before = add_region(&mem, temp_buffer_region->start, region_before_size, false);
 
     u32 array3_size = 250;
-    add_region(&mem, temp_buffer_region->start + region_before_size, array3_size, false);
-        
+    byte *array3 = add_region(&mem, temp_buffer_region->start + region_before_size, array3_size, true).start;
+
     u32 region_after_size = temp_buffer_size - array3_size - region_before_size;
     MemRegion region_after = add_region(&mem, temp_buffer_region->start, region_after_size, true);
 
@@ -809,8 +807,6 @@ static TEST_RESULT test_realloc()
     regions_before_realloc = mem.regions_count;
 
     region_after_size_before_realloc = mem.regions_arr[mem.regions_count - 3].size;
-
-    print_arena_details(&mem);
 
     realloc_size = array3_size + region_before_size;
     void *new_array3 = arena_realloc(&mem, array3, realloc_size);
